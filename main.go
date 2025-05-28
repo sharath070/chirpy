@@ -15,6 +15,7 @@ import (
 type apiConfig struct {
 	fileSeverHits atomic.Int32
 	dbQueries     *database.Queries
+	jwtSecret     string
 }
 
 const (
@@ -34,6 +35,7 @@ func main() {
 	cfg := apiConfig{
 		fileSeverHits: atomic.Int32{},
 		dbQueries:     database.New(db),
+		jwtSecret:     os.Getenv("SECRET"),
 	}
 
 	mux := http.NewServeMux()

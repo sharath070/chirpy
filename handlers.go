@@ -37,8 +37,9 @@ func (cfg *apiConfig) handleReset(w http.ResponseWriter, r *http.Request) {
 /***************************/
 
 type userParams struct {
-	Email    string `json:"email"`
-	Password string `json:"password"`
+	Email            string `json:"email"`
+	Password         string `json:"password"`
+	ExpiresInSeconds int    `json:"expires_in_seconds,omitempty"`
 }
 
 type userResp struct {
@@ -46,6 +47,7 @@ type userResp struct {
 	CreatedAt time.Time `json:"created_at"`
 	UpdatedAt time.Time `json:"updated_at"`
 	Email     string    `json:"email"`
+	Token     string    `json:"token,omitempty"`
 }
 
 func (cfg *apiConfig) handleCreateUser(w http.ResponseWriter, r *http.Request) {
@@ -102,11 +104,25 @@ func (cfg *apiConfig) handleLoginUser(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	var expireTime time.Duration
+	if params.ExpiresInSeconds != 0 {
+		expireTime = time.Duration(params.ExpiresInSeconds)
+	} else {
+		expireTime = time.Hour
+	}
+
+	token, err := auth.MakeJWT(user.ID, cfg.jwtSecret, expireTime)
+	if err != nil {
+		respondWithErr(w, http.StatusBadRequest, "error creating jwt token", err)
+		return
+	}
+
 	userResponse := userResp{
 		Id:        user.ID,
 		CreatedAt: user.CreatedAt,
 		UpdatedAt: user.UpdatedAt,
 		Email:     user.Email,
+		Token:     token,
 	}
 	respondWithJson(w, http.StatusOK, userResponse)
 }
@@ -117,11 +133,23 @@ func (cfg *apiConfig) handleLoginUser(w http.ResponseWriter, r *http.Request) {
 
 func (cfg *apiConfig) handleCreateChirp(w http.ResponseWriter, r *http.Request) {
 	var params struct {
-		Body   string `json:"body"`
-		UserId string `json:"user_id"`
+		Body string `json:"body"`
 	}
 
-	err := json.NewDecoder(r.Body).Decode(&params)
+	// check for valid jwt token
+	authToken, err := auth.GetBearerToken(r.Header)
+	if err != nil {
+		respondWithErr(w, http.StatusBadRequest, "auth token not found", err)
+		return
+	}
+
+	userId, err := auth.ValidateJWT(authToken, cfg.jwtSecret)
+	if err != nil {
+		respondWithErr(w, http.StatusUnauthorized, "unauthorized user", err)
+		return
+	}
+
+	err = json.NewDecoder(r.Body).Decode(&params)
 	if err != nil {
 		respondWithErr(w, http.StatusInternalServerError, "Error marshalling json", err)
 		return
@@ -138,12 +166,6 @@ func (cfg *apiConfig) handleCreateChirp(w http.ResponseWriter, r *http.Request) 
 		case "kerfuffle", "sharbert", "fornax", "profane":
 			bodySlice[i] = "****"
 		}
-	}
-
-	userId, err := uuid.Parse(params.UserId)
-	if err != nil {
-		respondWithErr(w, http.StatusBadRequest, "Bad uuid format", err)
-		return
 	}
 
 	chirp, err := cfg.dbQueries.CreateChirp(context.Background(), database.CreateChirpParams{

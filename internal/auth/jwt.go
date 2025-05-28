@@ -22,7 +22,7 @@ func MakeJWT(userID uuid.UUID, tokenSecret string, expiresIn time.Duration) (str
 		Issuer:    "chirpy",
 		IssuedAt:  jwt.NewNumericDate(time.Now().UTC()),
 		ExpiresAt: jwt.NewNumericDate(time.Now().Add(expiresIn).UTC()),
-		Subject:   string(userID.String()),
+		Subject:   userID.String(),
 	})
 
 	tokenStr, err := token.SignedString([]byte(tokenSecret))
