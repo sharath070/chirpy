@@ -3,7 +3,6 @@ package main
 import (
 	"context"
 	"encoding/json"
-	"fmt"
 	"log"
 	"net/http"
 	"strings"
@@ -13,123 +12,6 @@ import (
 	"github.com/sharath070/Chirpy/internal/auth"
 	"github.com/sharath070/Chirpy/internal/database"
 )
-
-func healthHandler(w http.ResponseWriter, r *http.Request) {
-	w.WriteHeader(http.StatusOK)
-	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
-	w.Write([]byte("OK"))
-}
-
-func (cfg *apiConfig) handleMetrics(w http.ResponseWriter, r *http.Request) {
-	w.WriteHeader(http.StatusOK)
-	w.Header().Set("Content-Type", "text/plain; charset=utf-8")
-	fmt.Fprintf(w, "Hits: %d", cfg.fileSeverHits.Load())
-}
-
-func (cfg *apiConfig) handleReset(w http.ResponseWriter, r *http.Request) {
-	cfg.fileSeverHits.Store(0)
-	w.WriteHeader(http.StatusOK)
-	w.Write([]byte("Hits set to 0"))
-}
-
-/***************************/
-/********** USERS **********/
-/***************************/
-
-type userParams struct {
-	Email            string `json:"email"`
-	Password         string `json:"password"`
-	ExpiresInSeconds int    `json:"expires_in_seconds,omitempty"`
-}
-
-type userResp struct {
-	Id        uuid.UUID `json:"id"`
-	CreatedAt time.Time `json:"created_at"`
-	UpdatedAt time.Time `json:"updated_at"`
-	Email     string    `json:"email"`
-	Token     string    `json:"token,omitempty"`
-}
-
-func (cfg *apiConfig) handleCreateUser(w http.ResponseWriter, r *http.Request) {
-	var params userParams
-
-	err := json.NewDecoder(r.Body).Decode(&params)
-	if err != nil {
-		respondWithErr(w, http.StatusInternalServerError, "Error decoding parameters", err)
-		return
-	}
-
-	hash, err := auth.HashPassword(params.Password)
-	if err != nil {
-		respondWithErr(w, http.StatusInternalServerError, "Failed to generate the hash password", err)
-		return
-	}
-
-	user, err := cfg.dbQueries.CreateUser(r.Context(), database.CreateUserParams{
-		Email:          params.Email,
-		HashedPassword: hash,
-	})
-	if err != nil {
-		respondWithErr(w, http.StatusBadRequest, "Error creating user", err)
-		return
-	}
-
-	userRes := userResp{
-		Id:        user.ID,
-		CreatedAt: user.CreatedAt,
-		UpdatedAt: user.UpdatedAt,
-		Email:     user.Email,
-	}
-	respondWithJson(w, http.StatusCreated, userRes)
-}
-
-func (cfg *apiConfig) handleLoginUser(w http.ResponseWriter, r *http.Request) {
-	var params userParams
-
-	err := json.NewDecoder(r.Body).Decode(&params)
-	if err != nil {
-		respondWithErr(w, http.StatusInternalServerError, "Error decoding parameters", err)
-		return
-	}
-
-	user, err := cfg.dbQueries.GetUserByEmail(context.Background(), params.Email)
-	if err != nil {
-		respondWithErr(w, http.StatusBadRequest, "Incorrect email or password", err)
-		return
-	}
-
-	err = auth.CheckPasswordHash(user.HashedPassword, params.Password)
-	if err != nil {
-		respondWithErr(w, http.StatusUnauthorized, "Incorrect email or password", err)
-		return
-	}
-
-	var expireTime time.Duration
-	if params.ExpiresInSeconds != 0 {
-		expireTime = time.Duration(params.ExpiresInSeconds)
-	} else {
-		expireTime = time.Hour
-	}
-
-	token, err := auth.MakeJWT(user.ID, cfg.jwtSecret, expireTime)
-	if err != nil {
-		respondWithErr(w, http.StatusBadRequest, "error creating jwt token", err)
-		return
-	}
-
-	userResponse := userResp{
-		Id:        user.ID,
-		CreatedAt: user.CreatedAt,
-		UpdatedAt: user.UpdatedAt,
-		Email:     user.Email,
-		Token:     token,
-	}
-	respondWithJson(w, http.StatusOK, userResponse)
-}
-
-/***************************/
-/********* CHIRPS **********/
-/***************************/
 
 func (cfg *apiConfig) handleCreateChirp(w http.ResponseWriter, r *http.Request) {
 	var params struct {

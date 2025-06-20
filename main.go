@@ -47,6 +47,7 @@ func main() {
 	// USERS
 	mux.HandleFunc("POST /api/users", cfg.handleCreateUser)
 	mux.HandleFunc("POST /api/login", cfg.handleLoginUser)
+	mux.HandleFunc("POST /api/refresh", cfg.handleRefresh)
 
 	//  CHIRPS
 	mux.HandleFunc("POST /api/chirps", cfg.handleCreateChirp)
